@@ -22,62 +22,63 @@ help:
 	echo; echo "Defaults:"; \
 	echo "  MODEL=$(MODEL)"; echo "  BASE_URL=$(BASE_URL)"; echo
 
+# ========== Docker containers ==========
 .PHONY: up down restart ps logs sh
-up: ## コンテナ起動（初回はdata配下を自動作成）
+up: ## Start containers (creates ./data/* on first run)
 	@mkdir -p ./data/models ./data/cache
 	$(COMPOSE) up -d
 
-down: ## コンテナ停止・削除
+down: ## Stop and remove containers
 	$(COMPOSE) down
 
-restart: ## 再起動
+restart: ## Recreate containers
 	$(COMPOSE) down && $(COMPOSE) up -d
 
-ps: ## コンテナ状況
+ps: ## Container status
 	$(COMPOSE) ps
 
-logs: ## ログ追跡
+logs: ## Tail logs
 	$(COMPOSE) logs -f $(SERVICE)
 
-sh: ## シェル突入
+sh: ## Shell into service
 	$(COMPOSE) exec $(SERVICE) bash
 
-# ========== GPU / ディスク確認 ==========
+# ========== GPU / Disk ==========
 .PHONY: smi size du-cache
-smi: ## GPU利用状況(nvidia-smi)
+smi: ## GPU usage (nvidia-smi)
 	$(COMPOSE) exec $(SERVICE) bash -lc 'nvidia-smi || true'
 
-size: ## モデルサイズ合計
+size: ## Total model size
 	@du -sh ./data/models || true
 
-du-cache: ## キャッシュサイズ合計
+du-cache: ## Total cache size
 	@du -sh ./data/cache || true
 
-# ========== Ollama基本操作 ==========
-.PHONY: pull list rm rm-all show run prompt
-pull: ## モデル取得: make pull MODEL=name:tag
+# ========== Ollama CLI ==========
+.PHONY: pull list rm rm-all show
+pull: ## Pull model: make pull MODEL=name:tag
 	@if [ -z "$(MODEL)" ]; then echo "Usage: make pull MODEL=<name:tag>"; exit 1; fi
 	$(COMPOSE) exec $(SERVICE) ollama pull $(MODEL)
 
-list: ## モデル一覧
+list: ## List models
 	$(COMPOSE) exec $(SERVICE) ollama list
 
-rm: ## モデル削除: make rm MODEL=name:tag
+rm: ## Remove model: make rm MODEL=name:tag
 	@if [ -z "$(MODEL)" ]; then echo "Usage: make rm MODEL=<name:tag>"; exit 1; fi
 	$(COMPOSE) exec $(SERVICE) ollama rm $(MODEL)
 
-rm-all: ## すべてのモデル削除(要確認)
+rm-all: ## Remove all models (confirmation)
 	@read -p "Remove ALL models under ./data/models ? [y/N] " a; [ "$$a" = "y" ] || [ "$$a" = "Y" ]
 	$(COMPOSE) exec $(SERVICE) bash -lc 'ollama list | awk "NR>1{print \$$1}" | xargs -r -n1 ollama rm'
 	@echo "Done."
 
-show: ## モデル情報(JSON): make show MODEL=name:tag
+show: ## Show model info (JSON): make show MODEL=name:tag
 	@if [ -z "$(MODEL)" ]; then echo "Usage: make show MODEL=<name:tag>"; exit 1; fi
 	$(COMPOSE) exec $(SERVICE) ollama show $(MODEL)
 
 .PHONY: models health
-models: ## /v1/models 取得
+models: ## GET /v1/models
 	$(CURL) $(BASE_URL)/models | $(JQ) .
 
-health: ## /v1/modelsで疎通確認(終了コードのみ)
+health: ## Health check via /v1/models (exit code only)
 	@$(CURL) -o /dev/null -w "%{http_code}\n" $(BASE_URL)/models | grep -Eq "200|401"
